@@ -3,7 +3,7 @@ package zioplayground
 import myzio._ 
 
 object MainApp extends scala.App:
-  Runtime.default.unsafeRunSync(run)
+  println(Runtime.default.unsafeRunSync(run))
 
   lazy val run = 
     for 
@@ -11,6 +11,11 @@ object MainApp extends scala.App:
       _ <- Console.printLine("What's your name?")
       name <- ZIO.succeed("Mouse Mikey")
       _ <- Console.printLine(s"Hello $name!")
+
+    //  _ <- ZIO
+    //    .attempt(throw RuntimeException("boom!"))
+    //    .mapError(_.getMessage)
+    //    .catchAll(_ => ZIO.succeed("naah, we good"))
       _ <- Console.printLine("-" * 10)
     yield ()
 
