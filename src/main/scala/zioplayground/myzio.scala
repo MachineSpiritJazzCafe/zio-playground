@@ -25,8 +25,8 @@ object myzio:
     def succeed[A](a: => A): ZIO[A] =
       ZIO(() => a)
 
-  object console:
-    def putStrLn(line: => String) = 
+  object Console:
+    def printLine(line: => String) = 
       ZIO.succeed(println(line))
 
     val getString = 

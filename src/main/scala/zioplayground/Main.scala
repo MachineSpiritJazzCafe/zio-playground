@@ -1,9 +1,11 @@
 package zioplayground
 
-import zio._ 
+import myzio._ 
 
-object MainApp extends ZIOAppDefault:
-  def run = 
+object MainApp extends scala.App:
+  Runtime.default.unsafeRunSync(run)
+
+  lazy val run = 
     for 
       _ <- Console.printLine("-" * 10)
       _ <- Console.printLine("What's your name?")
