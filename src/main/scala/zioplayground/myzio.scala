@@ -1,75 +1,67 @@
 package zioplayground
 
-object myzio:
-  final case class ZIO[+E, +A](thunk: () => Either[E, A]):
-    def flatMap[E1 >: E, B](azb: A => ZIO[E1, B]): ZIO[E1, B] = 
-      ZIO { () =>
-        val errorOrA = thunk()
+final class ZIO[-R, +E, +A](val run: R => Either[E, A]):
+  def flatMap[R1 <: R, E1 >: E, B](azb: A => ZIO[R1, E1, B]): ZIO[R1, E1, B] = 
+    ZIO( r => run(r).fold(ZIO.fail, azb).run(r))
 
-        val zErrorOrB = errorOrA match
-          case Right(a) => azb(a)
-          case Left(e) => ZIO.fail(e)
+  def map[B](ab: A => B): ZIO[R, E, B] =
+    ZIO (r => run(r).map(ab))
 
-        val errorOrB = zErrorOrB.thunk()
+  def catchAll[R1 <: R, E2, A1 >: A](h: E => ZIO[R1, E2, A1]): ZIO[R1, E2, A1] = 
+      ZIO( r => run(r).fold(h, ZIO.succeed).run(r))
 
-        errorOrB
-      }
+  def mapError[E2](h: E => E2): ZIO[R, E2, A] = 
+    ZIO(r => run(r).left.map(h))
 
-    def map[B](ab: A => B): ZIO[E, B] =
-      ZIO { () =>
-        val errorOrA = thunk()
+  def provide(r: => R): ZIO[Any, E, A] = 
+    ZIO(_ => run(r))
 
-        val errorOrB = errorOrA match
-          case Right(a) => Right(ab(a))
-          case Left(e) => Left(e)
-        
-        errorOrB
-      }
+object ZIO:
+  def succeed[A](a: => A): ZIO[Any, Nothing, A] =
+    ZIO((r) => Right(a))
 
-    def catchAll[E2, A1 >: A](h: E => ZIO[E2, A1]): ZIO[E2, A1] = 
-      ZIO { () =>
-        val errorOrA = thunk()
+  def fail[E](e: => E): ZIO[Any, E, Nothing] = 
+    ZIO((r) => Left(e))
 
-        val zError2OrA1 = errorOrA match
-          case Right(a) => ZIO.succeed(a)
-          case Left(e) => h(e)
-        
-        val error2OrA1 = zError2OrA1.thunk()
-        
-        error2OrA1
-      }
+  def attempt[A](a: => A): ZIO[Any, Throwable, A] =
+    ZIO { (r) => try Right(a) catch Left(_) }
 
-    def mapError[E2](h: E => E2): ZIO[E2, A] = 
-      ZIO { () => 
-        val errorOrA = thunk()
+  def fromFunction[R, A](run: R => A): ZIO[R, Nothing, A] =
+    ZIO(r => Right(run(r)))
 
-        val error2OrA = errorOrA match
-          case Right(a) => Right(a)
-          case Left(e) => Left(h(e))
-       
-        error2OrA  
-      }
-  
-  object ZIO:
-    def succeed[A](a: => A): ZIO[Nothing, A] =
-      ZIO(() => Right(a))
+  inline def access[R]: AccessPartiallyApplied[R] =
+    AccessPartiallyApplied()
 
-    def fail[E](e: => E): ZIO[E, Nothing] = 
-      ZIO(() => Left(e))
+  final class AccessPartiallyApplied[R]():
+    def apply[A](f: R => A): ZIO[R, Nothing, A] = 
+      environment[R].map(f)
 
-    def attempt[A](a: => A): ZIO[Throwable, A] =
-      ZIO { () => try Right(a) catch Left(_) }
+  inline def accessM[R]: AccessMPartiallyApplied[R] = 
+    AccessMPartiallyApplied()
 
-  object Console:
-    def printLine(line: => String) = 
-      ZIO.succeed(println(line))
+  final class AccessMPartiallyApplied[R]():
+    def apply[E, A](f: R => ZIO[R, E, A]): ZIO[R, E, A] =
+      environment.flatMap(f)
 
-    val getString = 
-      ZIO.succeed(scala.io.StdIn.readLine())
+  inline def environment[R]: ZIO[R, Nothing, R] =
+    identity
 
-  object Runtime:
-    object default:
-      def unsafeRunSync[E, A](zio: => ZIO[E, A]): Either[E, A] =
-        zio.thunk()
+  inline def read[R]: ZIO[R, Nothing, R] = 
+    identity
 
-      
+  def identity[R]: ZIO[R, Nothing, R] = 
+    ZIO.fromFunction(Predef.identity)
+
+object Console:
+  def printLine(line: => String) = 
+    ZIO.succeed(println(line))
+
+  lazy val getString = 
+    ZIO.succeed(scala.io.StdIn.readLine())
+
+object Runtime:
+  object default:
+    def unsafeRunSync[E, A](zio: => ZIO[ZEnv, E, A]): Either[E, A] =
+      zio.run(())
+
+type ZEnv = Unit    
