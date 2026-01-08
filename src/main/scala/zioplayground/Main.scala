@@ -1,5 +1,7 @@
 package zioplayground
 
+import java.io.IOException
+
 
 object businessLogic:
   type BusinessLogic = Has[BusinessLogic.Service]
@@ -43,14 +45,14 @@ object controller:
   type Controller = Has[Controller.Service]
   object Controller:
     trait Service:
-      def run: ZIO[Any, Nothing, Unit]
+      def run: ZIO[Any, IOException, Unit]
 
     lazy val live: ZLayer[businessLogic.BusinessLogic & console.Console, Nothing, Controller] =
       ZLayer.fromServices(make)
   
     def make(bl: businessLogic.BusinessLogic.Service, con: console.Console.Service): Service =
       new:
-        override lazy val run: ZIO[Any, Nothing, Unit] = 
+        override lazy val run: ZIO[Any, IOException, Unit] = 
           for
             _ <- con.printLine("-" * 100)
 
@@ -62,25 +64,18 @@ object controller:
             _ <- con.printLine("-" * 100)
           yield ()
 
-  lazy val run: ZIO[Controller, Nothing, Unit] =
+  lazy val run: ZIO[Controller, IOException, Unit] =
     ZIO.accessM(_.get.run)
 
 object DependencyGraph:
-  lazy val live: ZLayer[Any, Nothing, controller.Controller] =
+  lazy val env: ZLayer[Any, Nothing, controller.Controller] =
     GoogleImpl.live >>> businessLogic.BusinessLogic.live ++
       console.Console.live >>>
       controller.Controller.live
-
-  lazy val make: controller.Controller.Service =
-    val (g, con) = (GoogleImpl.make, console.Console.make)
-    val bl = businessLogic.BusinessLogic.make(g)
-    val c = controller.Controller.make(bl, con)
-
-    c
 
 object Main extends scala.App:
   Runtime.default.unsafeRunSync(program)
 
   lazy val program =
-    controller.run.provideLayer(DependencyGraph.live)
+    controller.run.provideLayer(DependencyGraph.env)
 
