@@ -6,6 +6,12 @@ final class ZIO[-R, +E, +A](val run: R => Either[E, A]):
   def flatMap[R1 <: R, E1 >: E, B](azb: A => ZIO[R1, E1, B]): ZIO[R1, E1, B] = 
     ZIO( r => run(r).fold(ZIO.fail, azb).run(r))
 
+  def zip[R1 <: R, E1 >: E, B](that: ZIO[R1, E1, B]): ZIO[R1, E1, (A, B)] =
+    for
+      a <- this
+      b <- that
+    yield a -> b
+
   def map[B](ab: A => B): ZIO[R, E, B] =
     ZIO (r => run(r).map(ab))
 
@@ -20,6 +26,13 @@ final class ZIO[-R, +E, +A](val run: R => Either[E, A]):
 
   def provideCustomLayer[R1 <: Has[?]](r1: => R1)(using Has[ZEnv] & R1 => R): ZIO[Has[ZEnv], E, A] =
     provideSome[Has[ZEnv]](_.union(r1).asInstanceOf[R])
+
+  def provideLayer[R1]: ProvideLayer[R1] =
+    ProvideLayer[R1]
+
+  final class ProvideLayer[R1]:
+    def apply[E1 >: E, B](layer: ZLayer[R1, E1, B])(using view: B => R): ZIO[R1, E1, A] =
+      layer.zio.map(view).flatMap(r => provide(r))
 
   /* provideSome spelled out ~
   for 
@@ -67,50 +80,3 @@ object ZIO:
 
   def identity[R]: ZIO[R, Nothing, R] = 
     ZIO.fromFunction(Predef.identity)
-
-object console: 
-  type Console = Has[Console.Service]
-  
-  object Console:
-    trait Service:
-      def printLine(line: => String): ZIO[Any, Nothing, Unit]
-      def getString: ZIO[Any, Nothing, String]
-    
-    lazy val live: ZIO[Any, Nothing, Service] =
-      ZIO.succeed(make)
-
-    lazy val make: Service = 
-      new:
-        def printLine(line: => String) = 
-          ZIO.succeed(println(line))
-
-        lazy val getString = 
-          ZIO.succeed(scala.io.StdIn.readLine())
-  
-  def printLine(line: => String): ZIO[Console, Nothing, Unit] = 
-    ZIO.accessM(_.get.printLine(line))
-    
-  def getString: ZIO[Console, Nothing, String] = 
-    ZIO.accessM(_.get.getString)
-
-object Runtime:
-  object default:
-    def unsafeRunSync[E, A](zio: => ZIO[ZEnv, E, A]): Either[E, A] =
-      zio.run(Has(console.Console.make))
-
-type ZEnv = Has[console.Console.Service]
-
-final class Has[A] private(private val map: Map[String, Any])
-object Has:
-  def apply[A](a: A)(using tag: ClassTag[A]): Has[A] =
-    new Has(Map(tag.toString -> a))
-
-  extension [A <: Has[?]](a: A)
-    inline def ++[B <: Has[?]](b: B): A & B =
-      union(b)
-    
-    infix def union[B <: Has[?]](b: B): A & B =
-      new Has(a.map ++ b.map).asInstanceOf[A & B]
-
-    def get[S](using A => Has[S])(using tag: ClassTag[S]): S =
-      a.map(tag.toString).asInstanceOf[S]
