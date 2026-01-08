@@ -20,8 +20,7 @@ final class ZLayer[-R, +E, A](val zio: ZIO[R, E, A]):
 
   def >>>[E1 >: E, B <: Has[?]](
       that: ZLayer[A, E1, B]
-    )(using
-      A => Has[?]
+    )(using A => Has[?]
     ): ZLayer[R, E1, B] =
     this.flatMap(a => that.provide(a))
 
@@ -47,3 +46,9 @@ object ZLayer:
       f: (S1, S2) => A
     ): ZLayer[R, Nothing, Has[A]] =
     ZLayer(ZIO.fromFunction(r => Has(f(r.get[S1], r.get[S2]))))
+
+  inline def requires[R]: ZLayer[R, Nothing, R] =
+    identity[R]
+
+  def identity[R]: ZLayer[R, Nothing, R] =
+    ZLayer(ZIO.identity)
